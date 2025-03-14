@@ -1,0 +1,52 @@
+
+&General
+  name          = "Riemann-2D"
+  dimension     = "2D"
+  dimensionless = .true.
+  equation      = "Euler"
+  gasModel      = "ideal"
+/
+
+&Geometry
+  type      = "uniform"
+  geoType   = "square"
+  geoSize   = 1.0
+  gridType  = "nodal-centered"
+  gridSize  = 21, 21
+  writeGrid = .true.
+/
+
+&Inviscid_Flux
+  reconstruct   = "MUSCL"
+  kappa         = 0.33333
+  limiter       = "minmod_"
+  flux_split    = "Roe"
+  entropy_fix   = 0.2
+/
+
+&Viscous_Flux
+/
+
+&Time_Stepping
+  time_scheme  = "Runge-Kutta"
+  timestep_set = "fixed"
+  fix_timestep = 2.0E-4
+  total_time   = 1.0
+  output_time  = 0.01
+  absolute_residual = 1.0E-8
+  relative_residual = 1.0E-6
+/
+
+&Boundary_Condition
+/
+
+&Initial_Condition
+/
+
+&Output
+  format    = "CGNS"
+  Density   = .true.
+  VelocityX = .true.
+  VelocityY = .true.
+  Pressure  = .true.
+/

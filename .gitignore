@@ -1,3 +1,22 @@
+# vscode file
+mod
+
+# executable
+bin
+
+# external library
+ext
+
+# cmake build
+build
+
+# external
+ext
+src/std
+
+# mesh file
+*.cgns
+
 # Prerequisites
 *.d
 
