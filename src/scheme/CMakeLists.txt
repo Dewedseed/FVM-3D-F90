@@ -10,6 +10,8 @@ set(
   scheme_FVS_VanLeer.f90
   scheme_WENO.f90
   scheme_AUSM.f90
+  scheme_gradient_finite_diff.f90
+  scheme_gradient_Green.f90
   numerical_scheme.f90
 )
 

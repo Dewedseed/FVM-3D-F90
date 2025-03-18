@@ -23,6 +23,7 @@ module type_defs_scheme
     integer, public :: MUSCL       = 201
     integer, public :: WENO        = 202
     integer, public :: WCNS        = 203
+    integer, public :: PPM         = 204
     ! Reconstruction limiter schemes
     integer, public :: limiter_none      = 250
     integer, public :: limiter_minmod    = 251
@@ -33,6 +34,9 @@ module type_defs_scheme
     integer, public :: VanLeer     = 301
     integer, public :: HLLC        = 302
     integer, public :: AUSM        = 303
+    ! Viscous flux Gradient scheme
+    integer, public :: Finite_Difference = 400
+    integer, public :: Green_Theorem     = 401
   end type ClassSchemeType
 
 contains
@@ -62,6 +66,8 @@ contains
       index = SchemeType%WENO
     else if ( trim(name) == "WCNS" ) then
       index = SchemeType%WCNS
+    else if ( trim(name) == "PPM" ) then
+      index = SchemeType%PPM
     else if ( trim(name) == "none_" ) then
       index = SchemeType%limiter_none
     else if ( trim(name) == "minmod_" ) then
@@ -78,6 +84,10 @@ contains
       index = SchemeType%HLLC
     else if ( trim(name) == "AUSM" ) then
       index = SchemeType%AUSM
+    else if ( trim(name) == "Finite_Difference" ) then
+      index = SchemeType%Finite_Difference
+    else if ( trim(name) == "Green_Theorem" ) then
+      index = SchemeType%Green_Theorem
     else
       index = SchemeType%NULL
     end if
@@ -112,12 +122,24 @@ contains
       name = "limiter_vanLeer"
     else if ( index == SchemeType%limiter_vanAlbada ) then
       name = "limiter_vanAlbada"
+    else if ( index == SchemeType%WENO ) then
+      name = "WENO"
+    else if ( index == SchemeType%WCNS ) then
+      name = "WCNS"
+    else if ( index == SchemeType%PPM ) then
+      name = "PPM"
     else if ( index == SchemeType%Roe ) then
       name = "Roe"
     else if ( index == SchemeType%VanLeer ) then
       name = "VanLeer"
-    else if ( index == SchemeType%WENO ) then
-      name = "WENO"
+    else if ( index == SchemeType%HLLC ) then
+      name = "HLLC"
+    else if ( index == SchemeType%AUSM ) then
+      name = "AUSM"
+    else if ( index == SchemeType%Finite_Difference ) then
+      name = "Finite_Difference"
+    else if ( index == SchemeType%Green_Theorem ) then
+      name = "Green_Theorem"
     else
       name = "NULL"
     end if

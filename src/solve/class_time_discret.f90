@@ -179,7 +179,7 @@ contains
     !...Inviscid flux
       call spaceDiscr%inviscid_flux(geometry, flowfield)
     !...Viscous flux (Navier-Stokes)
-      ! call spaceDiscr%viscous_flux(geometry, flowfield)
+      call spaceDiscr%viscous_flux(geometry, flowfield)
     !...Source Term
       ! call source%update(geometry, flowfield)
     !...Temporal discretization

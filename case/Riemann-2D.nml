@@ -25,6 +25,7 @@
 /
 
 &Viscous_Flux
+  gradient = FD
 /
 
 &Time_Stepping

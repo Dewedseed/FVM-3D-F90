@@ -15,6 +15,8 @@ module class_space_discret
 
   use global_type_defs, only : TypeDefs
 
+  use numerical_scheme, only : SpaceScheme
+
   implicit none
 
 !...Define scope
@@ -25,7 +27,8 @@ module class_space_discret
 !...Declare local variables
   type :: ClassSpaceDiscret
     integer,  public  :: reconstruct = 0   !< reconstruct scheme
-    integer,  public  :: flux_split = 0    !< flux split scheme
+    integer,  public  :: flux_split  = 0   !< flux split scheme
+    integer,  public  :: gradient    = 0
     real(dp), private :: kappa   = -1.0_dp !< kappa for MUSCL scheme (1/3)
     integer,  private :: limiter = -1      !< limiter for MUSCL scheme
     ! real(dp), private :: limiter_coeff(5)  = 1.0_dp !< limiter coefficient (Attension: not used)
@@ -42,6 +45,8 @@ module class_space_discret
     procedure, pass,   private :: FDS_Roe            => FDS_Roe_sub
     procedure, nopass, private :: FVS_VanLeer        => FVS_VanLeer_sub
     procedure, nopass, private :: FVS_AUSM           => FVS_AUSM_sub
+    procedure, nopass, private :: gradient_FD        => gradient_FD_sub
+    procedure, nopass, private :: compute_viscous    => compute_viscous_sub
     procedure, nopass, private :: update_residual    => update_residual_sub
     final :: delete_ClassSpaceDiscret  !< Destructor
   end type ClassSpaceDiscret
@@ -116,6 +121,12 @@ contains
   continue
   end subroutine allocate_memory_sub
 
+!=============================================================================80
+!
+! Inviscid flux subroutines
+!
+!=============================================================================80
+
   !> Compute inviscid flux
   subroutine inviscid_flux_sub(this, geometry, flowfield)
     use class_geometry,   only : ClassGeometry
@@ -179,7 +190,6 @@ contains
   subroutine reconstruct_simple_sub(blk, dir)
     use defs_block_data,  only : ClassBlockData
     use defs_fluid_props, only : Primitive_Variable
-    use numerical_scheme, only : SpaceScheme
   !...Declare input/output variables
     type(ClassBlockData), intent(inout) :: blk
     integer,              intent(in)    :: dir
@@ -259,7 +269,6 @@ contains
   subroutine reconstruct_MUSCL_sub(this, blk, dir)
     use defs_block_data,  only : ClassBlockData
     use defs_fluid_props, only : Primitive_Variable
-    use numerical_scheme, only : SpaceScheme
   !...Declare input/output variables
     class(ClassSpaceDiscret), intent(inout) :: this
     type(ClassBlockData),     intent(inout) :: blk
@@ -339,7 +348,6 @@ contains
     use class_flow_field, only : ClassFlowField
     use defs_block_data,  only : ClassBlockData
     use defs_fluid_props, only : Primitive_Variable
-    use numerical_scheme, only : SpaceScheme
   !...Declare input/output variables
     type(ClassBlockData),     intent(inout) :: blk
     integer,                  intent(in)    :: dir
@@ -428,7 +436,6 @@ contains
     use defs_block_data,  only : ClassBlockData
     use defs_block_geom,  only : ClassGeomBlock, NCOORD
     use defs_fluid_props, only : Primitive_Variable
-    use numerical_scheme, only : SpaceScheme
   !...Declare input/output variables
     class(ClassSpaceDiscret), intent(inout) :: this
     type(ClassBlockData),     intent(inout) :: blk
@@ -512,7 +519,6 @@ contains
     use defs_block_data, only : ClassBlockData
     use defs_block_geom,  only : ClassGeomBlock, NCOORD
     use defs_fluid_props, only : Primitive_Variable
-    use numerical_scheme, only : SpaceScheme
   !...Declare input/output variables
     type(ClassBlockData), intent(inout) :: blk
     integer,              intent(in)    :: dir
@@ -542,7 +548,7 @@ contains
     if (error%allocate("Normal of half face")) call mpi%stop(error%what())
     norm        = 0.0_dp
     norm(:,dir) = 1.0_dp
-  !...Get block mesh
+  !...Get block parameters
     mesh     => blk%get_geom()
     qp_minus => blk%get_qp_minus()
     qp_plus  => blk%get_qp_plus()
@@ -592,7 +598,6 @@ contains
     use defs_block_data, only : ClassBlockData
     use defs_block_geom,  only : ClassGeomBlock, NCOORD
     use defs_fluid_props, only : Primitive_Variable
-    use numerical_scheme, only : SpaceScheme
   !...Declare input/output variables
     type(ClassBlockData), intent(inout) :: blk
     integer,              intent(in)    :: dir
@@ -622,7 +627,7 @@ contains
     if (error%allocate("Normal of half face")) call mpi%stop(error%what())
     norm        = 0.0_dp
     norm(:,dir) = 1.0_dp
-  !...Get block mesh
+  !...Get block parameters
     mesh     => blk%get_geom()
     qp_minus => blk%get_qp_minus()
     qp_plus  => blk%get_qp_plus()
@@ -667,12 +672,215 @@ contains
     end select
   end subroutine FVS_AUSM_sub
 
+!=============================================================================80
+!
+! Viscous flux subroutines
+!
+!=============================================================================80
+
   !> Compute viscous flux
-  subroutine viscous_flux_sub(this)
+  subroutine viscous_flux_sub(this, geometry, flowfield)
+    use class_geometry,   only : ClassGeometry
+    use class_flow_field, only : ClassFlowField
   !...Declare input/output variables
     class(ClassSpaceDiscret),  intent(inout) :: this
+    class(ClassGeometry),      intent(inout) :: geometry
+    class(ClassFlowField),     intent(inout) :: flowfield
+  !...Declare local variables
+    integer :: iblk, dir
   continue
+  !...Loop over blocks
+    do iblk = 1, geometry%nblocks()
+      call devlog%print(message="Compute viscous flux Block: "// string%from(iblk))
+    !...Loop over directions
+      do dir = 1, geometry%idimension
+        call devlog%print(message="Direction: "// string%from(dir))
+        call flowfield%block(iblk)%reset_pool()
+      !...Compute variable gradient
+        if (this%gradient == TypeDefs%Scheme%Finite_Difference) then
+          call devlog%print(message="Compute gradient using finite difference")
+          call this%gradient_FD(flowfield%block(iblk), flowfield%gamma, dir)
+        else if (this%gradient == TypeDefs%Scheme%Green_Theorem) then
+          call devlog%print(message="Compute gradient using Green's theorem")
+          ! call this%gradient_green(geometry%get_block(iblk), flowfield)
+        end if
+      !...Compute viscous flux
+        call devlog%print(message="Compute viscous flux")
+        call this%compute_viscous(flowfield%block(iblk), dir, &
+                                  flowfield%nconserved_var())
+      !...Update residual
+        call devlog%print(message="Update RHS")
+        call this%update_residual(flowfield%block(iblk), dir)
+      end do
+    end do
   end subroutine viscous_flux_sub
+
+  !> Compute gradient using finite difference for viscous flux
+  subroutine gradient_FD_sub(blk, gamma, dir)
+    use defs_block_data,  only : ClassBlockData
+    use defs_block_geom,  only : ClassGeomBlock
+    use defs_fluid_props, only : Primitive_Variable
+  !...Declare input/output variables
+    type(ClassBlockData), intent(inout) :: blk
+    real(dp),             intent(in)    :: gamma
+    integer,              intent(in)    :: dir
+  !...Declare local variable
+    type(ClassGeomBlock),     pointer :: mesh
+    type(Primitive_Variable), pointer :: pg(:,:,:)
+    type(Primitive_Variable), pointer :: grad(:,:,:,:)
+    real(dp),                 pointer :: gradT(:,:,:,:)
+    integer(i8) :: nface(3), dghost(3)
+    real(dp)    :: dr(3) !< cell size
+  continue
+  !...Get block parameters
+    mesh  => blk%get_geom()
+    pg    => blk%get_qp_ghost()
+    grad  => blk%get_grad()
+    gradT => blk%get_gradT()
+  !...Necessary for gradient computation
+    nface(1) = blk%real_mesh%nface(1)
+    nface(2) = blk%real_mesh%nface(2)
+    nface(3) = blk%real_mesh%nface(3)
+
+    dghost(1) = blk%real_mesh%map_ijk(1)
+    dghost(2) = blk%real_mesh%map_ijk(2)
+    dghost(3) = blk%real_mesh%map_ijk(3)
+
+    dr(1) = mesh%dr(1_i8, 1_i8, 1_i8, 1)
+    dr(2) = mesh%dr(1_i8, 1_i8, 1_i8, 2)
+    dr(3) = mesh%dr(1_i8, 1_i8, 1_i8, 3)
+  !...Compute gradient
+    call SpaceScheme%gradient_FD(nface, dghost, dr, dir, pg%u, grad%u)
+    call SpaceScheme%gradient_FD(nface, dghost, dr, dir, pg%v, grad%v)
+    call SpaceScheme%gradient_FD(nface, dghost, dr, dir, pg%w, grad%w)
+    call SpaceScheme%gradient_FD(nface, dghost, dr, dir, pg%press / pg%rho, gradT)
+
+    gradT = gamma / (gamma - 1) * gradT
+  end subroutine gradient_FD_sub
+
+  !> Compute viscous flux
+  subroutine compute_viscous_sub(blk, dir, neq)
+    use defs_block_data,  only : ClassBlockData
+    use defs_fluid_props, only : Primitive_Variable
+    use defs_block_geom,  only : NCOORD
+  !...Declare input/output variables
+    type(ClassBlockData), intent(inout) :: blk
+    integer,              intent(in)    :: dir
+    integer,              intent(in)    :: neq
+  !...Declare local variable
+    type(Primitive_Variable), pointer :: pg(:,:,:) !< primitive variable at ghost
+    type(Primitive_Variable), pointer :: grad(:,:,:,:) !< gradient of primitive
+    real(dp),                 pointer :: gradT(:,:,:,:) !< gradient of temperature
+    real(dp),                 pointer :: flux(:,:,:,:) !< viscous flux
+
+    integer(i8) :: i, j, k, ig, jg, kg
+    integer(i8) :: dghost(3)
+    integer(i8) :: nface
+    integer(i8) :: imax, jmax, kmax
+
+    real(dp) :: Pr   = 0.72_dp    !< Prandtl number
+    real(dp) :: mu_0 = 17.9E-6_dp !< dynamic viscosity
+
+    real(dp), allocatable :: mu(:) !< dynamic viscosity
+    real(dp), allocatable :: norm(:,:)
+
+    type(Primitive_Variable), allocatable :: pface(:) !< primitive variable at face
+  continue
+  !...Get block parameters
+    pg    => blk%get_qp_ghost()
+    grad  => blk%get_grad()
+    gradT => blk%get_gradT()
+    flux  => blk%get_flux()
+  !...Necessary for flux computation
+    imax = blk%real_mesh%nvert(1)
+    jmax = blk%real_mesh%nvert(2)
+    kmax = blk%real_mesh%nvert(3)
+
+    nface  = blk%real_mesh%nface(dir)
+
+    dghost(1) = blk%real_mesh%map_ijk(1)
+    dghost(2) = blk%real_mesh%map_ijk(2)
+    dghost(3) = blk%real_mesh%map_ijk(3)
+
+    allocate(mu(nface), stat=error%ialloc)
+    if (error%allocate('mu')) call mpi%stop(error%what())
+    mu = mu_0
+
+    allocate(norm(blk%real_mesh%nface(dir), NCOORD), stat=error%ialloc)
+    if (error%allocate("Normal of half face")) call mpi%stop(error%what())
+    norm        = 0.0_dp
+    norm(:,dir) = 1.0_dp
+
+    allocate(pface(nface), stat=error%ialloc)
+    if (error%allocate("Primitive variable at face")) call mpi%stop(error%what())
+  !...Compute flux
+    select case (dir)
+      case (1) !< i-direction
+        do k = 1, kmax
+          do j = 1, jmax
+            do i = 1, nface
+              ig = i + dghost(1)
+              jg = j + dghost(2)
+              kg = k + dghost(3)
+
+              pface(i)%u = (pg(ig,jg,kg)%u + pg(ig-1,jg,kg)%u) / 2.0_dp
+              pface(i)%v = (pg(ig,jg,kg)%v + pg(ig-1,jg,kg)%v) / 2.0_dp
+              pface(i)%w = (pg(ig,jg,kg)%w + pg(ig-1,jg,kg)%w) / 2.0_dp
+            end do
+            call SpaceScheme%viscous_flux(nface, neq, Pr, mu, norm, pface, &
+                                          grad (1:nface, j, k, :), &
+                                          gradT(1:nface, j, k, :), &
+                                          flux (1:nface, j, k, :))
+          end do
+        end do
+      case (2) !< j-direction
+        do k = 1, kmax
+          do i = 1, imax
+            do j = 1, nface
+              ig = i + dghost(1)
+              jg = j + dghost(2)
+              kg = k + dghost(3)
+
+              pface(j)%u = (pg(ig,jg,kg)%u + pg(ig,jg-1,kg)%u) / 2.0_dp
+              pface(j)%v = (pg(ig,jg,kg)%v + pg(ig,jg-1,kg)%v) / 2.0_dp
+              pface(j)%w = (pg(ig,jg,kg)%w + pg(ig,jg-1,kg)%w) / 2.0_dp
+            end do
+            call SpaceScheme%viscous_flux(nface, neq, Pr, mu, norm, pface, &
+                                          grad (i, 1:nface, k, :), &
+                                          gradT(i, 1:nface, k, :), &
+                                          flux (i, 1:nface, k, :))
+          end do
+        end do
+      case (3) !< k-direction
+        do j = 1, jmax
+          do i = 1, imax
+            do k = 1, nface
+              ig = i + dghost(1)
+              jg = j + dghost(2)
+              kg = k + dghost(3)
+
+              pface(k)%u = (pg(ig,jg,kg)%u + pg(ig,jg,kg-1)%u) / 2.0_dp
+              pface(k)%v = (pg(ig,jg,kg)%v + pg(ig,jg,kg-1)%v) / 2.0_dp
+              pface(k)%w = (pg(ig,jg,kg)%w + pg(ig,jg,kg-1)%w) / 2.0_dp
+            end do
+            call SpaceScheme%viscous_flux(nface, neq, Pr, mu, norm, pface, &
+                                          grad (i, j, 1:nface, :), &
+                                          gradT(i, j, 1:nface, :), &
+                                          flux (i, j, 1:nface, :))
+          end do
+        end do
+      case default
+        call devlog%print(where="class_space_discret::compute_viscous_sub", &
+                          message="Invalid direction", &
+                          level=LogLevel%error)
+    end select
+  end subroutine compute_viscous_sub
+
+!=============================================================================80
+!
+! Update residual
+!
+!=============================================================================80
 
   !> Update residual
   subroutine update_residual_sub(blk, dir)

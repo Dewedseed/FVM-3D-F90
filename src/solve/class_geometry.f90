@@ -65,8 +65,11 @@ module class_geometry
 
   use method_gridgen,  only : ClassGridGenerate
   use method_gridfile, only : ClassGridFile
+  use method_partition
 
   use defs_block_geom, only : ClassGeomBlock, ClassGeomData, NDIR, NCOORD
+
+  use interface_cgns_write, only : ClassCGNSFile
 
   use global_devlog, only : devlog, LogLevel
 
@@ -424,7 +427,6 @@ contains
 
   !> Partition multi-block grid for parallel computing
   subroutine grid_partition_sub(this)
-    use method_partition
   !...Declare input/output variables
     class(ClassGeometry), intent(inout) :: this
   !...Declare local variables
@@ -480,7 +482,6 @@ contains
 
   !> Write grid
   subroutine write_grid_sub(this)
-    use interface_cgns_write, only : ClassCGNSFile
   !...Declare input/output variables
     class(ClassGeometry), intent(inout) :: this
   !...Declare local variables

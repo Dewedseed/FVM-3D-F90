@@ -50,6 +50,10 @@ module defs_block_data
                                       !< primitive variables on negative side of face
     real(dp),                 pointer :: qr(:,:,:,:) => null()
                                       !< reconstructed conserved variables on face
+    type(Primitive_Variable), pointer :: grad(:,:,:,:) => null()
+                                      !< gradient of primitive variables
+    real(dp),                 pointer :: gradT(:,:,:,:) => null()
+                                      !< gradient of temperature
   contains
     procedure :: link_geom         => link_geom_sub
     procedure :: allocate_memory   => allocate_memory_sub
@@ -69,6 +73,8 @@ module defs_block_data
     procedure :: get_qp_plus  => get_face_qp_plus_fun
     procedure :: get_qp_minus => get_face_qp_minus_fun
     procedure :: get_geom     => get_block_geom_fun
+    procedure :: get_grad     => get_grad_fun
+    procedure :: get_gradT    => get_gradT_fun
 
     procedure, private :: get_pg_blk  => get_primitive_ghost_blk_fun
     generic :: get_qp_ghost => get_pg_blk
@@ -95,6 +101,8 @@ contains
     if (associated(this%p_plus))  deallocate(this%p_plus)
     if (associated(this%p_minus)) deallocate(this%p_minus)
     if (associated(this%qr))      deallocate(this%qr)
+    if (associated(this%grad))    deallocate(this%grad)
+    if (associated(this%gradT))   deallocate(this%gradT)
   end subroutine delete_ClassBlockData
 
   !> Set geometry
@@ -160,6 +168,12 @@ contains
 
     allocate(this%qr(ni, nj, nk, neq), stat=error%ialloc)
     if (error%allocate("Face conserved variables")) return
+
+    allocate(this%grad(ni, nj, nk, 3), stat=error%ialloc)
+    if (error%allocate("Face gradient")) return
+
+    allocate(this%gradT(ni, nj, nk, 3), stat=error%ialloc)
+    if (error%allocate("Face gradient of temperature")) return
   end subroutine allocate_memory_sub
 
   !> Initialize block values (Primitive variables)
@@ -382,5 +396,21 @@ contains
   continue
     mesh_ptr => this%mesh
   end function get_block_geom_fun
+
+  !> Get gradient of primitive variables
+  function get_grad_fun(this) result(grad_ptr)
+    class(ClassBlockData), intent(inout) :: this
+    type(Primitive_Variable), pointer :: grad_ptr(:,:,:,:)
+  continue
+    grad_ptr => this%grad(:,:,:,:)
+  end function get_grad_fun
+
+  !> Get gradient of temperature
+  function get_gradT_fun(this) result(gradT_ptr)
+    class(ClassBlockData), intent(inout) :: this
+    real(dp), pointer :: gradT_ptr(:,:,:,:)
+  continue
+    gradT_ptr => this%gradT(:,:,:,:)
+  end function get_gradT_fun
 
 end module defs_block_data
